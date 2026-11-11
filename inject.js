@@ -10,7 +10,7 @@
 //  - 不逐个扫描整棵 DOM：MutationObserver 只处理新增节点，在 rAF 里按时间预算分批处理（流式输出不会卡）。
 (() => {
   'use strict';
-  if (location.protocol !== 'dsh-app:') return; // 只给 Harness 自己的页面套皮肤，不碰 webview 里打开的第三方网页
+  if (location.protocol !== 'dsh-app:' && !(window.__BZ_PANEL && location.protocol === 'about:')) return; // about:blank 只有「小窗口设置面板」（hook.js 开的独立窗口，启动器注入时带 __BZ_PANEL）会套用；// 只给 Harness 自己的页面套皮肤，不碰 webview 里打开的第三方网页
   if (window.__bz && window.__bz.destroy) { try { window.__bz.destroy(); } catch (e) {} }
 
   const DEFAULTS = {
@@ -112,6 +112,13 @@ html.bz-min [class*="_viewArea"] button.bz-copied svg { visibility: hidden; }
 html.bz-min [class*="_viewArea"] button.bz-copied::after { content: "\\2713"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
 html.bz-min [class*="_viewArea"] [class*="_flowItem"]:has(> div > [class*="_visuallyHidden"]):has([class*="_durationNumber"]),
 html.bz-min [class*="_viewArea"] [class*="_root"]:has(> div > button[class*="_title"]) { display: none !important; }
+/* 思考过程/工具调用过程整块隐藏（上面那条 :has(> div > button[class*="_title"])）；生成中原来的「深度求索中，用时 N 秒」整行换成一个很小的淡色跳动省略号，
+   答案一开始输出（紧挨在它前面的兄弟是带 markdown 的答案块）就消失。纯 CSS：流式新生成的块一插入就生效，不会先闪出来 */
+html.bz-min [class*="_viewArea"] [class*="_running"] { display: flex !important; align-items: center; height: 22px !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; border: 0 !important; }
+html.bz-min [class*="_viewArea"] [class*="_running"] > :not([class*="_visuallyHidden"]) { display: none !important; }
+html.bz-min [class*="_viewArea"] [class*="_running"]::after { content: "·"; font: 700 22px/22px "Microsoft YaHei UI", system-ui, sans-serif; letter-spacing: 3px; opacity: .55; animation: bzdots 1.1s steps(1) infinite; }
+@keyframes bzdots { 0% { content: "·"; } 33% { content: "· ·"; } 66% { content: "· · ·"; } }
+html.bz-min [class*="_viewArea"] [class*="_flowItem"]:has([class*="_markdown"]) + [class*="_running"] { display: none !important; }
 /* 极简：细滚动条，只在悬停/滚动（鼠标在其上）时出现 */
 html.bz-min *::-webkit-scrollbar { width: 4px !important; height: 4px !important; background: transparent !important; }
 html.bz-min *::-webkit-scrollbar-track, html.bz-min *::-webkit-scrollbar-corner { background: transparent !important; }
@@ -157,11 +164,24 @@ html.bz-min ${CARD_SEL} button[class*="_primary"] { width: 30px !important; heig
 html.bz-away #bz-veil, html.bz-wake #bz-veil { display: block; }
 
 /* 弹出菜单 */
-#bz-menu { position: fixed; z-index: 2147483645; width: 264px; padding: 12px 14px 10px; border-radius: 12px;
+#bz-menu { position: fixed; z-index: 2147483645; box-sizing: border-box; width: 292px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-x: hidden; overflow-y: auto; padding: 12px 14px 10px; border-radius: 12px;
   font: 13px/1.45 "Microsoft YaHei UI", system-ui, sans-serif; user-select: none; -webkit-app-region: no-drag;
   background: #fff; color: #0f1115; border: 1px solid rgba(0,0,0,.1); box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 #bz-menu.bz-dark { background: #26262b; color: #f2f2f4; border-color: rgba(255,255,255,.12); box-shadow: 0 8px 28px rgba(0,0,0,.5); }
 #bz-menu[hidden] { display: none; }
+#bz-menu::-webkit-scrollbar { width: 4px; background: transparent; }
+#bz-menu::-webkit-scrollbar-track { background: transparent; }
+#bz-menu::-webkit-scrollbar-thumb { background: rgba(128,128,128,.45); border-radius: 2px; }
+#bz-menu .bz-r label > span, #bz-menu .bz-c > span, #bz-menu .bz-k { overflow-wrap: anywhere; min-width: 0; }
+#bz-menu .bz-colorrow > span { min-width: 0; overflow-wrap: anywhere; }
+#bz-menu .bz-dot { flex: 0 0 20px; margin-left: 8px; }
+#bz-menu .bz-c input { flex: 0 0 auto; }
+/* 小窗口里的独立设置窗口：菜单铺满整个窗口 */
+html.bz-panelwin, html.bz-panelwin body { margin: 0 !important; overflow: hidden !important; background: #fff !important; }
+html.bz-panelwin.bz-pdark, html.bz-panelwin.bz-pdark body { background: #26262b !important; }
+html.bz-panelwin #bz-menu { inset: 0 !important; width: auto !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; border: 0 !important; box-shadow: none !important; padding: 14px 16px !important; }
+html.bz-panelwin #bz-rs, html.bz-panelwin #bz-wc, html.bz-panelwin #bz-veil { display: none !important; }
+html.bz-dragging, html.bz-dragging * { user-select: none !important; cursor: grabbing !important; }
 #bz-menu * { box-sizing: border-box; color: inherit !important; }
 #bz-menu .bz-ttl { font-weight: 600; margin-bottom: 6px; }
 #bz-menu .bz-r { margin: 9px 0; }
@@ -705,7 +725,7 @@ html.bz-away #bz-veil, html.bz-wake #bz-veil { display: block; }
   }
 
   // ---------- 弹出菜单 + 字体颜色调色盘 ----------
-  let menu = null, menuOpen = false, palOpen = false;
+  let menu = null, menuOpen = false, palOpen = false, isPanel = false;
   const SWATCHES = [['白', '#ffffff'], ['浅灰', '#d8dbe0'], ['灰', '#9aa0a8'], ['黑', '#1a1c20'], ['薄荷绿', '#a0e8c0'], ['淡蓝', '#a8d0f0'], ['淡紫', '#c8b8f0'], ['暖黄', '#f0dca0'], ['粉', '#f4b8cc']];
   let hsv = [150, 0.3, 0.9];
   function buildMenu() {
@@ -734,7 +754,7 @@ html.bz-away #bz-veil, html.bz-wake #bz-veil { display: block; }
       el.addEventListener('input', () => set({ [el.dataset.k]: el.type === 'checkbox' ? el.checked : +el.value }));
     });
     menu.querySelector('[data-a=reset]').onclick = () => call({ type: 'reset' });
-    menu.querySelector('.bz-colorrow').addEventListener('click', () => { palOpen = !palOpen; syncMenu(); placeMenu(btn); });
+    menu.querySelector('.bz-colorrow').addEventListener('click', () => { palOpen = !palOpen; syncMenu(); placeMenu(btn); if (isPanel) menu.scrollTop = menu.scrollHeight; });
     menu.querySelector('[data-a=default]').onclick = () => { set({ textColor: '' }); syncMenu(); };
     menu.querySelectorAll('.bz-sw button').forEach((b) => b.addEventListener('click', () => { setColor(b.dataset.c, true); }));
     const hexIn = menu.querySelector('.bz-hex');
@@ -799,36 +819,41 @@ html.bz-away #bz-veil, html.bz-wake #bz-veil { display: block; }
     }
   }
   function placeMenu(anchor) {
-    if (!menu) return;
-    const w = 264;
+    if (!menu || isPanel) return;
+    // 宽度 = min(264, 窗口宽 − 16)（CSS 的 max-width 也限制）；高度超出窗口时菜单内部滚动；位置夹在窗口内
     const vis = anchor && anchor.isConnected && anchor.getBoundingClientRect().width > 0;
-    if (vis) {
-      const r = anchor.getBoundingClientRect();
-      menu.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
-      menu.style.bottom = Math.max(8, innerHeight - r.top + 8) + 'px';
-    } else { menu.style.left = '16px'; menu.style.bottom = '16px'; } // 极简模式：侧边栏被隐藏，弹在窗口左下角
-    menu.style.top = 'auto';
+    const maxW = Math.max(120, innerWidth - 16);
+    menu.style.maxHeight = Math.max(80, innerHeight - 16) + 'px';
+    const w = Math.min(292, maxW), h = menu.offsetHeight || 300;
+    let left, bottomEdge;
+    if (vis) { const r = anchor.getBoundingClientRect(); left = r.left; bottomEdge = r.top - 8; }
+    else { left = 16; bottomEdge = innerHeight - 16; } // 极简模式：侧边栏被隐藏，弹在窗口左下角
+    left = Math.max(8, Math.min(left, innerWidth - w - 8));
+    const top = Math.max(8, Math.min(bottomEdge - h, innerHeight - h - 8));
+    menu.style.left = left + 'px'; menu.style.top = top + 'px'; menu.style.bottom = 'auto';
   }
+  const isDarkNow = () => { const c = getComputedStyle(document.body).color.match(/[\d.]+/g) || [0, 0, 0]; return lum(+c[0], +c[1], +c[2]) > 0.6; }; // 文字偏亮说明是深色主题
   function openMenu(anchor) {
     if (!document.body) return;
+    if (!isPanel && (innerWidth < 260 || innerHeight < 300)) { closeMenu(); call({ type: 'panel', dark: isDarkNow() }); return; } // 窗口太小：弹独立设置窗口
     if (!menu) buildMenu();
-    const c = getComputedStyle(document.body).color.match(/[\d.]+/g) || [0, 0, 0];
-    menu.classList.toggle('bz-dark', lum(+c[0], +c[1], +c[2]) > 0.6); // 文字偏亮说明是深色主题
-    placeMenu(anchor || btn);
+    menu.classList.toggle('bz-dark', isDarkNow());
     menu.hidden = false;
     menuOpen = true;
     syncMenu();
+    placeMenu(anchor || btn);
   }
   function closeMenu() { if (menu) menu.hidden = true; menuOpen = false; }
   function toggleMenu(anchor) { menuOpen ? closeMenu() : openMenu(anchor); }
   const onDocDown = (e) => {
-    if (!menuOpen) return;
+    if (!menuOpen || isPanel) return;
     if (menu && menu.contains(e.target)) return;
     if (btn && btn.contains(e.target)) return;
     closeMenu();
   };
   const onKey = (e) => {
     if (e.key !== 'Escape') return;
+    if (isPanel) { call({ type: 'panel', close: true }); return; }
     if (menuOpen) { closeMenu(); return; }
     // 极简模式没有发送/停止键：生成中按 Esc = 点原来的「停止」按钮（隐藏的按钮照样能 click）
     if (document.documentElement.classList.contains('bz-min') && !e.isComposing) {
@@ -903,12 +928,16 @@ html.bz-away #bz-veil, html.bz-wake #bz-veil { display: block; }
     openMenu() { openMenu(btn); },
     toggleMenu() { toggleMenu(btn); },
     closeMenu,
+    panelMode(dark) { // 独立设置窗口：整窗菜单
+      isPanel = true; const r = document.documentElement; r.classList.add('bz-panelwin'); r.classList.toggle('bz-pdark', !!dark);
+      if (!menu) buildMenu(); menu.classList.toggle('bz-dark', !!dark); menu.hidden = false; menuOpen = true; palOpen = false; syncMenu();
+    },
     rescan() { rescanAll(); },
     destroy() {
       cleanups.forEach((f) => { try { f(); } catch (e) {} });
       if (mo) mo.disconnect();
       document.removeEventListener('pointerdown', onDocDown, true); document.removeEventListener('click', onCopyClick, true); document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('resize', updateMax);
+      window.removeEventListener('resize', updateMax); window.removeEventListener('resize', onResizeMenu); document.removeEventListener('mousedown', onDgDown, true); document.removeEventListener('mousemove', onDgMove, true); document.removeEventListener('mouseup', onDgUp, true);
       resetBg(); resetText();
       [styleEl, accentStyle, colorStyle, veil, wc, menu, btn].forEach((e) => { try { e && e.remove(); } catch (x) {} });
       const r = document.documentElement;
@@ -927,6 +956,55 @@ html.bz-away #bz-veil, html.bz-wake #bz-veil { display: block; }
   document.addEventListener('pointerdown', onDocDown, true);
   document.addEventListener('keydown', onKey, true);
   window.addEventListener('resize', updateMax);
+  function onResizeMenu() { if (menuOpen && !isPanel) { if (innerWidth < 260 || innerHeight < 300) { closeMenu(); } else placeMenu(btn); } }
+  window.addEventListener('resize', onResizeMenu);
+  // ---------- 极简模式：非文字区域按住拖动窗口 ----------
+  // 不用 -webkit-app-region（会吞点击/右键/选字）：mousedown 时判断目标不是交互元素、不在滚动条上、鼠标下也没有真正的文字，
+  // 移动超过 3px 才通知主进程开始拖动（主进程按鼠标屏幕坐标 setBounds）；mouseup 结束。
+  const NO_DRAG = 'a,button,input,textarea,select,label,summary,video,audio,canvas,img,pre,code,svg,iframe,[contenteditable],[role="button"],[role="textbox"],[role="slider"],#bz-menu,#bz-wc,#bz-rs i';
+  let dg = null;
+  function onScrollbar(e) {
+    for (let n = e.target; n && n.nodeType === 1; n = n.parentElement) {
+      const root = n === document.documentElement, cw = root ? document.documentElement.clientWidth : n.clientWidth, ow = root ? innerWidth : n.offsetWidth;
+      if (ow - cw > 2) { const left = root ? 0 : n.getBoundingClientRect().left; if (e.clientX >= left + cw) return true; }
+      const ch = root ? document.documentElement.clientHeight : n.clientHeight, oh = root ? innerHeight : n.offsetHeight;
+      if (oh - ch > 2) { const top = root ? 0 : n.getBoundingClientRect().top; if (e.clientY >= top + ch) return true; }
+    }
+    return false;
+  }
+  function textAt(x, y) {
+    const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+    if (!r || r.startContainer.nodeType !== 3) return false;
+    const n = r.startContainer, o = r.startOffset, len = n.data.length;
+    for (const [a, b] of [[o, o + 1], [o - 1, o]]) {
+      if (a < 0 || b > len || /\s/.test(n.data.slice(a, b))) continue;
+      const rg = document.createRange(); rg.setStart(n, a); rg.setEnd(n, b);
+      for (const q of rg.getClientRects()) if (x >= q.left - 1 && x <= q.right + 1 && y >= q.top - 1 && y <= q.bottom + 1) return true;
+    }
+    return false;
+  }
+  function onDgDown(e) {
+    dg = null;
+    if (isPanel || e.button !== 0 || e.defaultPrevented || !document.documentElement.classList.contains('bz-min')) return;
+    const t = e.target; if (!t || t.nodeType !== 1 || t.closest(NO_DRAG) || onScrollbar(e) || textAt(e.clientX, e.clientY)) return;
+    dg = { x: e.screenX, y: e.screenY, on: false };
+  }
+  function onDgMove(e) {
+    if (!dg || dg.on) return;
+    if (!(e.buttons & 1)) { dg = null; return; }
+    if (Math.hypot(e.screenX - dg.x, e.screenY - dg.y) <= 3) return;
+    dg.on = true; document.documentElement.classList.add('bz-dragging');
+    try { getSelection().removeAllRanges(); } catch (x) {}
+    call({ type: 'dg', on: true });
+  }
+  function onDgUp() {
+    if (dg && dg.on) { call({ type: 'dg', on: false }); document.documentElement.classList.remove('bz-dragging'); }
+    dg = null;
+  }
+  document.addEventListener('mousedown', onDgDown, true);
+  document.addEventListener('mousemove', onDgMove, true);
+  document.addEventListener('mouseup', onDgUp, true);
+  window.addEventListener('blur', onDgUp);
   whenRoot(() => {
     injectStyle();                 // 根元素一出现就插入静态样式（发送按钮灰色等不会先闪出原样）
     applyClasses();

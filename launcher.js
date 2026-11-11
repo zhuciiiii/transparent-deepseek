@@ -306,13 +306,14 @@ const sessions = new Map(); // sessionId -> targetId
 const evalIn = (sid, expression) => page.send('Runtime.evaluate', { expression }, sid);
 function broadcast(expression, exceptSid) { for (const sid of sessions.keys()) if (sid !== exceptSid) evalIn(sid, expression); }
 function broadcastState(exceptSid) { if (sessions.size === 1 && exceptSid) return; broadcast(`window.__bz && window.__bz.apply(${JSON.stringify(S)})`, exceptSid); }
-function buildSource() { return `window.__BZ_INIT = ${JSON.stringify(S)};\n` + fs.readFileSync(path.join(DIR, 'inject.js'), 'utf8'); }
+function buildSource(panel) { return (panel ? 'window.__BZ_PANEL = true;\n' : '') + `window.__BZ_INIT = ${JSON.stringify(S)};\n` + fs.readFileSync(path.join(DIR, 'inject.js'), 'utf8'); }
 
+const panelSessions = new Set();
 async function attachPage(sid) {
   await page.send('Runtime.enable', {}, sid);
   await page.send('Runtime.addBinding', { name: BINDING }, sid);
   await page.send('Page.enable', {}, sid);
-  const src = buildSource();
+  const src = buildSource(panelSessions.has(sid));
   await page.send('Page.addScriptToEvaluateOnNewDocument', { source: src, runImmediately: true }, sid);
   log('已注入页面', sessions.get(sid));
 }
@@ -322,6 +323,7 @@ function onPageEvent(m) {
     const u = targetInfo.url || '';
     if (targetInfo.type !== 'page' || u.startsWith('devtools:') || (u && u !== 'about:blank' && !u.startsWith('dsh-app://'))) return; // 只处理 Harness 自己的页面
     sessions.set(sessionId, targetInfo.targetId);
+    if (u === 'about:blank' || u === '') panelSessions.add(sessionId);
     attachPage(sessionId).catch((e) => log('注入失败', e.message));
   } else if (m.method === 'Target.detachedFromTarget') sessions.delete(m.params.sessionId);
   else if (m.method === 'Runtime.bindingCalled' && m.params.name === BINDING) {
@@ -330,6 +332,8 @@ function onPageEvent(m) {
     else if (msg.type === 'reset') resetAll();
     else if (msg.type === 'win') { if (msg.op === 'min' || msg.op === 'max' || msg.op === 'close') mainEval(`globalThis.__bzWinOp && globalThis.__bzWinOp('${msg.op}')`).catch(() => {}); }
     else if (msg.type === 'rs') { const e = /^[nsew]{1,2}$/.test(msg.edge || '') ? msg.edge : ''; mainEval(e ? `globalThis.__bzRsStart && globalThis.__bzRsStart('${e}')` : `globalThis.__bzRsStop && globalThis.__bzRsStop()`).catch(() => {}); }
+    else if (msg.type === 'dg') mainEval(msg.on ? 'globalThis.__bzDgStart && globalThis.__bzDgStart()' : 'globalThis.__bzDgStop && globalThis.__bzDgStop()').catch(() => {});
+    else if (msg.type === 'panel') mainEval(msg.close ? 'globalThis.__bzPanelClose && globalThis.__bzPanelClose()' : `globalThis.__bzPanelToggle && globalThis.__bzPanelToggle(${msg.dark ? 'true' : 'false'})`).catch(() => {});
     else if (msg.type === 'hello') {
       pushMain(true);
       mainEval('globalThis.__bzIsFocused ? globalThis.__bzIsFocused() : true').then((f) => {

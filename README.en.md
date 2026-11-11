@@ -32,6 +32,8 @@ Requirements: Windows 10 / 11 with DeepSeek Harness installed.
   - Resize from any edge or corner (minimum 240×120); a ~10px invisible strip at the top drags the window; content wraps when narrow.
   - Only a small **Copy** button under each answer; a compact single-line input with **no send button**: `Enter` sends, `Shift+Enter` newline, `Esc` stops generation.
   - No close button. `Win+↓` minimizes; `Win+↑` does not work on a transparent window — use the tray menu "Maximize / restore window".
+  - Drag the window by pressing on any **non-text** blank area (dragging on text selects it); thinking/tool-call blocks are hidden — while generating only a tiny faint ellipsis shows and disappears once the answer starts; everything returns when you leave minimal mode.
+  - The settings menu fits and scrolls inside small windows; in a very small window (width < 260 or height < 300) settings open in a separate small window (click outside or press Esc to close).
 - **Magic mode**: the whole window fades out when it loses focus (it still blocks clicks) and comes back instantly, with no white flash.
 
 ### Shortcuts (global, also work while the window is hidden)

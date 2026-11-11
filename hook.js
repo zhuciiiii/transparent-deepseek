@@ -239,6 +239,42 @@
       w.setBounds({ x, y, width, height });
     }, 8) };
   };
+  // 极简模式：在非文字区域按住拖动窗口（页面判断「不是文字/交互元素」并移动超过 3px 后才发 start；主进程按鼠标屏幕坐标持续 setBounds，不经页面）
+  let dg = null;
+  globalThis.__bzDgStop = () => { if (dg) { clearInterval(dg.t); dg = null; } };
+  globalThis.__bzDgStart = () => {
+    globalThis.__bzDgStop();
+    const w = chatWins()[0]; if (!w || w.isMaximized()) return;
+    const b = w.getBounds(), p0 = E.screen.getCursorScreenPoint(), t0 = Date.now();
+    dg = { t: setInterval(() => {
+      if (w.isDestroyed() || Date.now() - t0 > 120000) return globalThis.__bzDgStop();
+      const p = E.screen.getCursorScreenPoint();
+      w.setBounds({ x: b.x + p.x - p0.x, y: b.y + p.y - p0.y, width: b.width, height: b.height });
+    }, 6) };
+  };
+  // 窗口太小（宽 < 260 或高 < 300）时设置菜单放不下：弹出一个独立的小设置窗口（无边框，出现在主窗口旁边，失焦/Esc 关闭）。
+  // 窗口里是同一个注入脚本（启动器会把它注入 about:blank 页面），由页面的 __bz.panelMode() 切成「整窗菜单」。
+  let panel = null;
+  globalThis.__bzPanelClose = () => { try { if (panel && !panel.isDestroyed()) panel.close(); } catch (e) {} panel = null; };
+  globalThis.__bzPanelToggle = (dark) => {
+    if (panel && !panel.isDestroyed()) { globalThis.__bzPanelClose(); return 'closed'; }
+    const main = chatWins()[0]; if (!main) return 'nomain';
+    const b = main.getBounds(), wa = E.screen.getDisplayMatching(b).workArea, W = 300, H = 470;
+    let x = b.x + b.width + 8; if (x + W > wa.x + wa.width) x = b.x - W - 8; if (x < wa.x) x = Math.max(wa.x, Math.min(b.x, wa.x + wa.width - W));
+    const y = Math.max(wa.y, Math.min(b.y, wa.y + wa.height - H));
+    panel = new E.BrowserWindow({ x, y, width: W, height: Math.min(H, wa.height), frame: false, resizable: false, minimizable: false, maximizable: false, skipTaskbar: true, parent: main, show: false, alwaysOnTop: true, backgroundColor: dark ? '#26262b' : '#ffffff', hasShadow: true });
+    const pw = panel;
+    pw.once('ready-to-show', () => { try { pw.show(); pw.focus(); } catch (e) {} });
+    pw.on('blur', () => setTimeout(() => { try { if (!pw.isDestroyed() && !pw.isFocused()) pw.close(); } catch (e) {} }, 120));
+    pw.on('closed', () => { if (panel === pw) panel = null; });
+    pw.loadURL('about:blank');
+    let n = 0; // 等启动器把注入脚本装进这个页面，再切到面板模式
+    const iv = setInterval(() => {
+      if (pw.isDestroyed() || ++n > 60) return clearInterval(iv);
+      pw.webContents.executeJavaScript('(window.__bz&&window.__bz.panelMode)?(window.__bz.panelMode(' + (dark ? 'true' : 'false') + '),1):0', true).then((r) => { if (r === 1) clearInterval(iv); }).catch(() => {});
+    }, 100);
+    return 'opened';
+  };
   let lastMinimal = false;
   globalThis.__bzSetState = (s) => {
     globalThis.__bzMagic = !!s.magic;
