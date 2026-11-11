@@ -1,0 +1,6 @@
+settings.json
+*.log
+backup/
+screenshots/
+shot_*.png
+HANDOFF.md
