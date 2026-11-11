@@ -10,7 +10,10 @@ const path = require('path');
 const cp = require('child_process');
 
 const DIR = __dirname;
-const EXE = process.env.DSH_EXE || 'D:\\DeepSeek\\deep\\DeepSeek Harness.exe';
+// Harness 位置来自 config.json（detect.ps1 自动检测，失效时自动重新检测；repair/uninstall 时不弹选择窗）
+const CONFIG = require('./config.js').load({ noPrompt: process.argv[2] === 'repair' || process.argv[2] === 'uninstall' });
+if (!CONFIG) { console.log('[失败] 找不到 DeepSeek Harness（config.json 无效，自动检测也没有找到）。请先运行 install.bat。'); process.exit(3); }
+const EXE = CONFIG.exe;
 const APPID = process.env.DSH_APPID || 'com.deepseek.dsh';
 const SYS32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
 const WSCRIPT = path.join(SYS32, 'wscript.exe');

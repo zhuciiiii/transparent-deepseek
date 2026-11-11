@@ -264,6 +264,29 @@
   };
   globalThis.__bzIsFocused = () => { state.focused = computeFocused(); return state.focused; };
   globalThis.__bzFocus = () => { for (const w of chatWins()) { try { if (w.isMinimized()) w.restore(); w.show(); w.focus(); } catch (e) {} } };
+  // ---------- 控制管道：启动器之后都通过它控制主进程，hook 装好后 inspector 就被启动器关掉 ----------
+  // 命名管道名是随机的，并且每个连接必须先发令牌（随机，只写在启动器目录的 run.json 里）；不监听任何 TCP 端口。
+  try {
+    const PIPE = __BZ_PIPE__, TOKEN = __BZ_TOKEN__;
+    const net = process.getBuiltinModule('node:net');
+    const srv = net.createServer((sock) => {
+      sock.setEncoding('utf8');
+      let buf = '', authed = false;
+      sock.on('error', () => {});
+      const reply = (o) => {
+        try { let s; try { s = JSON.stringify(o); } catch (e) { o.value = String(o.value); s = JSON.stringify(o); } sock.write(s + '\n'); } catch (e) {}
+      };
+      const handle = (line) => {
+        let m; try { m = JSON.parse(line); } catch (e) { return; }
+        if (!authed) { if (m.auth === TOKEN) authed = true; else sock.destroy(); return; }
+        Promise.resolve().then(() => (0, eval)(m.expr)).then((v) => reply({ id: m.id, ok: true, value: v === undefined ? null : v }), (e) => reply({ id: m.id, ok: false, error: String(e && e.message || e) }));
+      };
+      sock.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); handle(l); } });
+    });
+    srv.on('error', (e) => log('control pipe error', String(e)));
+    srv.listen(PIPE);
+    globalThis.__bzPipeServer = srv;
+  } catch (e) { log('control pipe failed', String(e)); }
   log('hook installed; node', process.version, 'electron', process.versions.electron, 'setTitleBarOverlay patched:', typeof origSet === 'function');
   return 'installed';
 })()

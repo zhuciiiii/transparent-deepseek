@@ -8,11 +8,16 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const http = require('http');
+const net = require('net');
+const crypto = require('crypto');
 
 const DIR = __dirname;
-const EXE = process.env.DSH_EXE || 'D:\\DeepSeek\\deep\\DeepSeek Harness.exe';
-const PORT = +(process.env.DSH_PORT || 9223);       // 页面 CDP
-const INSPECT = +(process.env.DSH_INSPECT || 9341);  // 主进程 Node inspector（避开应用 host 子进程占用的 9230）
+// 端口全部在启动时随机选一个空闲的、只绑 127.0.0.1（见 launchAndHook）；不再使用固定端口
+let PORT = 0;     // 页面 CDP（remote-debugging-port）
+let INSPECT = 0;  // 主进程 Node inspector：只在注入 hook 时短暂打开，完成后由 hook 自己关掉
+const RUN_FILE = path.join(DIR, 'run.json'); // 本次运行的端口/管道名/令牌（单实例、重新附着用）
+const TOKEN = crypto.randomBytes(16).toString('hex');
+let PIPE_NAME = '';
 const SETTINGS_FILE = path.join(DIR, 'settings.json');
 const LOG_FILE = path.join(DIR, 'hook.log');
 const BINDING = '__bzCall';
@@ -88,6 +93,11 @@ function showError(text) {
   } catch (e) {}
 }
 
+// Harness 位置：来自 config.json（detect.ps1 自动检测）；失效（更新/搬家）时自动重新检测
+const CONFIG = require('./config.js').load();
+if (!CONFIG) { showError('找不到 DeepSeek Harness。请运行 install.bat（会让你选择 DeepSeek Harness.exe 的位置）。'); setTimeout(() => process.exit(3), 1500); }
+const EXE = CONFIG ? CONFIG.exe : '';
+
 // 任务栏：快捷方式的 AppUserModelID（和原程序快捷方式一致）+ 从运行中的窗口固定到任务栏时使用的「重新启动命令」
 const WSCRIPT = path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'wscript.exe');
 const VBS = path.join(DIR, 'launch.vbs');
@@ -100,23 +110,72 @@ const APPDETAILS = {
 };
 
 // ---------- 主进程（Node inspector） ----------
-let main = null; // Cdp
+// 安全：inspector 只在注入 hook 的那几百毫秒里开着（127.0.0.1 + 随机端口）。hook 在 Harness 主进程里另开一个
+// 「随机名字的命名管道 + 随机令牌」的小服务，之后启动器都走管道（mainEval），并把 inspector 关掉。
+let main = null; // Cdp（仅注入阶段 / 管道失败时的后备）
+let pipe = null; // Pipe
 const hookSource = () => fs.readFileSync(path.join(DIR, 'hook.js'), 'utf8')
   .replace('__BZ_LOG__', JSON.stringify(LOG_FILE.replace(/\\/g, '/')))
   .replace(/__BZ_EXE__/g, JSON.stringify(EXE.replace(/\\/g, '/')))
+  .replace('__BZ_PIPE__', JSON.stringify(PIPE_NAME))
+  .replace('__BZ_TOKEN__', JSON.stringify(TOKEN))
   .replace('__BZ_APPDETAILS__', JSON.stringify(APPDETAILS));
 
+class Pipe {
+  constructor(name, token) { this.name = name; this.token = token; this.id = 1; this.pending = new Map(); this.onClose = () => {}; }
+  connect() {
+    return new Promise((resolve, reject) => {
+      const sock = this.sock = net.connect(this.name);
+      sock.setEncoding('utf8');
+      let buf = '';
+      sock.on('connect', () => { sock.write(JSON.stringify({ auth: this.token }) + '\n'); resolve(); });
+      sock.on('error', (e) => reject(e));
+      sock.on('data', (d) => {
+        buf += d; let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i); buf = buf.slice(i + 1);
+          try { const m = JSON.parse(line); const p = this.pending.get(m.id); if (p) { this.pending.delete(m.id); m.ok ? p.res(m.value) : p.rej(new Error(m.error)); } } catch (e) {}
+        }
+      });
+      sock.on('close', () => { for (const p of this.pending.values()) p.rej(new Error('pipe closed')); this.pending.clear(); this.onClose(); });
+    });
+  }
+  eval(expr, timeoutMs = 15000) {
+    return new Promise((res, rej) => {
+      const id = this.id++;
+      const t = setTimeout(() => { this.pending.delete(id); rej(new Error('pipe timeout')); }, timeoutMs);
+      this.pending.set(id, { res: (v) => { clearTimeout(t); res(v); }, rej: (e) => { clearTimeout(t); rej(e); } });
+      try { this.sock.write(JSON.stringify({ id, expr }) + '\n'); } catch (e) { clearTimeout(t); rej(e); }
+    });
+  }
+  close() { try { this.sock.destroy(); } catch (e) {} }
+}
+
 async function mainEval(expression) {
+  if (pipe) return pipe.eval(expression);
   if (!main) return undefined;
   const r = await main.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
   return r.result ? r.result.value : undefined;
 }
 
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.on('error', reject);
+    s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
+}
+function readRun() { try { return JSON.parse(fs.readFileSync(RUN_FILE, 'utf8')); } catch (e) { return null; } }
+function writeRun(patch) { try { fs.writeFileSync(RUN_FILE, JSON.stringify(Object.assign(readRun() || {}, patch, { pid: process.pid }), null, 2)); } catch (e) { log('写 run.json 失败', e.message); } }
+
 // maxMs：等主进程 inspector 出现的最长时间；超时返回 false（普通方式已在运行时，新进程会立刻把控制权交给旧进程然后退出）
 async function launchAndHook(maxMs = 20000) {
   try { fs.unlinkSync(LOG_FILE); } catch (e) {}
   log('启动 Harness（--inspect-brk 在 main.js 之前注入窗口钩子）...');
-  const child = cp.spawn(EXE, [`--remote-debugging-port=${PORT}`, `--inspect-brk=${INSPECT}`,
+  PORT = await freePort(); INSPECT = await freePort();
+  PIPE_NAME = '\\\\.\\pipe\\bz-' + crypto.randomBytes(12).toString('hex');
+  writeRun({ page: PORT, pipe: PIPE_NAME, token: TOKEN });
+  const child = cp.spawn(EXE, [`--remote-debugging-port=${PORT}`, '--remote-debugging-address=127.0.0.1', `--inspect-brk=127.0.0.1:${INSPECT}`,
     // 隐形（窗口几乎透明）时页面不能停止重绘/降频，否则恢复时会显示旧帧或白帧
     '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', ...FORWARD_ARGS], { detached: true, stdio: 'ignore', cwd: path.dirname(EXE) });
   child.unref();
@@ -140,28 +199,47 @@ async function launchAndHook(maxMs = 20000) {
   await main.send('Debugger.disable');
   main.onEvent = () => {};
   main.onClose = () => { if (!quitting) { log('Harness 主进程已退出'); shutdown(); } };
+  // 改走命名管道，然后关掉 inspector（失败就保留 inspector 作后备，只是端口会一直开着）
+  try {
+    const p = new Pipe(PIPE_NAME, TOKEN);
+    let ok = false;
+    for (let i = 0; i < 100 && !ok; i++) { try { await p.connect(); ok = true; } catch (e) { await sleep(50); } }
+    if (!ok) throw new Error('连不上 hook 的管道');
+    if ((await p.eval('globalThis.__bzHooked === true')) !== true) throw new Error('管道另一端没有 hook');
+    main.onClose = () => {};
+    await p.eval("process.getBuiltinModule('node:inspector').close(), 'closed'");
+    try { main.ws.close(); } catch (e) {}
+    main = null; pipe = p;
+    pipe.onClose = () => { if (!quitting) { log('Harness 主进程已退出（管道断开）'); shutdown(); } };
+    log('inspector 已关闭，主进程控制改走命名管道；inspector 端口仍监听：', await alive(INSPECT, '/json/list'));
+  } catch (e) { log('[警告] 管道不可用，inspector 端口保持打开：', e.message); }
   return true;
 }
 
 async function attachExisting() {
-  // 已有实例：只有它是被本启动器钩过的（带 inspector 且 __bzHooked）才有透明窗口
-  if (!(await alive(INSPECT, '/json/list'))) return false;
-  const l = await getJson(INSPECT, '/json/list');
-  if (!l.length) return false;
-  main = new Cdp(l[0].webSocketDebuggerUrl);
-  await main.open();
-  const hooked = await mainEval('globalThis.__bzHooked === true');
-  if (!hooked) { try { main.ws.close(); } catch (e) {} main = null; return false; }
-  main.onClose = () => { if (!quitting) { log('Harness 主进程已退出'); shutdown(); } };
+  // 已有实例：只有它是被（某个旧的）本启动器钩过的（run.json 里有管道名和令牌，且 __bzHooked）才有透明窗口
+  const r = readRun();
+  if (!r || !r.pipe || !r.token || !r.page) return false;
+  const p = new Pipe(r.pipe, r.token);
+  try { await p.connect(); if ((await p.eval('globalThis.__bzHooked === true', 4000)) !== true) throw new Error('not hooked'); }
+  catch (e) { p.close(); return false; }
+  PORT = r.page; PIPE_NAME = r.pipe;
+  if (!(await alive(PORT))) { p.close(); return false; }
+  pipe = p;
+  pipe.onClose = () => { if (!quitting) { log('Harness 主进程已退出（管道断开）'); shutdown(); } };
+  // 旧启动器的令牌已经写在 run.json 里；本启动器要重新生成管道令牌太麻烦，所以沿用旧令牌（只是本进程内的 TOKEN 用于控制端口）
   return true;
 }
 
 async function ensureHarness() {
-  if (await alive(PORT)) {
+  const run = readRun();
+  const pageAlive = !!(run && run.page && await alive(run.page));
+  if (pageAlive) {
     if (await attachExisting()) { log('附着到已被钩过的 Harness 实例'); return; }
+    PORT = run.page;
     log('检测到没有被钩过的 Harness 实例，关掉后用美化版重开 ...');
     if (!(await killHarness())) { showError('无法关闭正在运行的 DeepSeek Harness，请手动完全退出它（托盘图标右键 -> 退出）后再打开。'); process.exit(2); }
-  } else if (harnessRunning()) {
+  } else if (harnessRunning()) { // 没有被本启动器钩过（没有 run.json 记录的端口，或页面端口已不通）
     // 注意：不能乐观地直接启动——实测应用并不会因为单实例锁让第二个进程自动退出，结果会同时跑两个实例
     log('检测到以普通方式运行的 Harness（没有调试端口），关掉后用美化版重开 ...');
     if (!(await killHarness())) { showError('无法关闭正在运行的 DeepSeek Harness，请手动完全退出它（托盘图标右键 -> 退出）后再打开。'); process.exit(2); }
@@ -172,19 +250,23 @@ async function ensureHarness() {
 }
 
 // ---------- 单实例：再点一次快捷方式只是把已有的美化版窗口带到前台 ----------
-const CONTROL = +(process.env.DSH_CONTROL || 9342);
+// 控制端口：随机端口 + 只绑 127.0.0.1，必须带令牌；端口和令牌写在 run.json 里，第二个启动器从那里读
 let controlServer = null;
 async function otherLauncherAlive() {
-  try { const r = await fetch(`http://127.0.0.1:${CONTROL}/focus`, { signal: AbortSignal.timeout(2500) }); return r.ok; } catch (e) { return false; }
+  const r = readRun();
+  if (!r || !r.control || !r.ctoken || r.pid === process.pid) return false;
+  try { const x = await fetch(`http://127.0.0.1:${r.control}/focus?t=${r.ctoken}`, { signal: AbortSignal.timeout(2500) }); return x.ok; } catch (e) { return false; }
 }
 function startControlServer() {
   return new Promise((resolve) => {
     controlServer = http.createServer((req, res) => {
-      if (req.url === '/focus') mainEval('globalThis.__bzFocus && globalThis.__bzFocus()').catch(() => {});
+      const u = new URL(req.url, 'http://127.0.0.1');
+      if (u.pathname !== '/focus' || u.searchParams.get('t') !== TOKEN) { res.writeHead(403); res.end('no'); return; }
+      mainEval('globalThis.__bzFocus && globalThis.__bzFocus()').catch(() => {});
       res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok');
     });
     controlServer.on('error', () => resolve(false));
-    controlServer.listen(CONTROL, '127.0.0.1', () => resolve(true));
+    controlServer.listen(0, '127.0.0.1', () => { writeRun({ control: controlServer.address().port, ctoken: TOKEN }); resolve(true); });
   });
 }
 
@@ -313,6 +395,7 @@ function shutdown() {
   if (quitting) return;
   quitting = true;
   try { controlServer && controlServer.close(); } catch (e) {}
+  try { const r = readRun(); if (r && r.pid === process.pid) { delete r.control; delete r.ctoken; fs.writeFileSync(RUN_FILE, JSON.stringify(r, null, 2)); } } catch (e) {}
   try { helper && helper.stdin.write('quit\n'); } catch (e) {}
   try { const { magic, ...persist } = S; fs.writeFileSync(SETTINGS_FILE, JSON.stringify(Object.assign(persist, FADE), null, 2)); } catch (e) {}
   setTimeout(() => process.exit(0), 600);
@@ -337,6 +420,7 @@ function scheduleRepair() {
 }
 
 (async () => {
+  if (!CONFIG) return;
   if (await otherLauncherAlive()) { log('已有美化启动器在运行：只把窗口带到前台'); process.exit(0); }
   await startControlServer();
   await ensureHarness();

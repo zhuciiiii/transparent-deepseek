@@ -1,8 +1,16 @@
 @echo off
 chcp 65001 >nul
-title DeepSeek Harness 美化启动器
+setlocal EnableExtensions
+title 透明版 DeepSeek - 调试启动（带控制台）
 cd /d "%~dp0"
-set "NODE=D:\DeepSeek\deep\resources\runtime\primary-runtime\dependencies\node\bin\node.exe"
-if not exist "%NODE%" set "NODE=node"
+set "NODE="
+for /f "usebackq delims=" %%N in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0detect.ps1" -Get node`) do set "NODE=%%N"
+if not defined NODE goto :nonode
 "%NODE%" launcher.js
 if errorlevel 1 pause
+exit /b 0
+
+:nonode
+echo [失败] 找不到 DeepSeek Harness。请先运行 install.bat。
+pause
+exit /b 1

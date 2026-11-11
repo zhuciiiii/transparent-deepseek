@@ -1,65 +1,91 @@
-# Transparent DeepSeek (a transparency skin for DeepSeek Harness)
+# Transparent DeepSeek
 
 [简体中文](README.md) | **English**
 
-> An unofficial third-party tool, not affiliated with DeepSeek. It does **not** modify `app.asar`, so the app's auto-update keeps working.
+Adds a transparent window to **DeepSeek Harness** (the Windows desktop app): window opacity, text opacity and text colour are three independent controls, plus a minimal mode and a "magic" mode that hides the window when it loses focus. It **does not modify any file of Harness itself**, so Harness auto-updates keep working.
 
-A launcher that makes the DeepSeek Harness (Electron) window transparent and lets you control window opacity, text opacity and text colour independently — plus a minimal mode and a "magic" hide-on-blur mode.
+| Transparent window | Minimal mode |
+| --- | --- |
+| ![Transparent window](docs/screenshot-transparent.png) | ![Minimal mode](docs/screenshot-minimal.png) |
 
-## Requirements
+> Unofficial third-party tool, not affiliated with DeepSeek. See the [disclaimer](#disclaimer) below.
 
-- Windows 10/11 with DeepSeek Harness installed at `D:\DeepSeek\deep\`; put this folder at `D:\DeepSeek\beautify\`.
-- The paths are hard-coded in `install.bat`, `start.bat`, `uninstall.bat`, `launch.vbs` and `repair.vbs` (the `NODE=` / `node =` lines). Edit them if your install location differs.
-- Run `install.bat` once. To remove everything, run `uninstall.bat` (restores all original shortcuts).
+## Install in three steps
 
-## How to start
+1. Download the latest `transparent-deepseek-x.y.z.zip` from [Releases](../../releases) and **unzip it anywhere** (spaces and non-ASCII characters in the path are fine).
+2. Double-click `install.bat`. It finds your DeepSeek Harness installation automatically and rewrites the Harness shortcuts (Start menu / desktop / taskbar) to start the transparent version.
+3. From now on, open DeepSeek Harness from those shortcuts as usual. Click "Skin settings" at the bottom-left of the sidebar or press `Ctrl+Alt+T` to adjust.
 
-After `install.bat`, **every entry point (Start menu, desktop shortcut) launches the skinned Harness** through `wscript //B launch.vbs` — no console window. Original shortcuts are backed up to `backup\`. `start.bat` starts it with a console for debugging. If a plain (un-skinned) Harness is already running, clicking a shortcut closes it and restarts the skinned one; if the skinned one is running, it just brings the window to the front. No startup item is ever created. The launcher re-checks the shortcuts on each start, so they are repaired after an auto-update rewrites them (run `install.bat` again if you opened the original once).
+> If Harness is running, `install.bat` asks you to quit it first; you can also skip that — the next launch from a shortcut closes the old window and restarts the transparent one.
+
+Requirements: Windows 10 / 11 with DeepSeek Harness installed.
 
 ## Features
 
-- **Skin settings button** in the sidebar (above "Signed in"): opens a menu with window opacity, text opacity, text colour, minimal mode, magic mode and reset.
-- **Window opacity 0–100%** — only backgrounds change (including the input box). At 0% only the text floats over your desktop; the window still receives clicks and typing. Opacity is linear: 50% really looks half transparent.
-- **Text opacity 0–100%**, independent of window opacity: chat content, the whole input area (text, model picker, status bar, send button) and the whole title bar. Borders and dividers follow text opacity.
-- **Text colour**: soft presets, a custom picker, HEX input and a "default" button; the opacity slider still applies on top; code blocks keep their syntax colours; secondary text keeps its relative contrast.
-- **Everything with its own background in the chat** (inline code, code blocks, tables, badges, kbd, tooltips, menus…) follows window opacity; inline code keeps a faint outline at low opacity.
-- **No blue**: the send button is a grey circle; the theme's blue CSS variables are replaced by grey.
-- **Input box**: a very light layer (border, background, shadow) that never turns dark on hover/focus; pasted images show only as a faint `[Image N]` chip with a tiny × (the image is still sent as an attachment).
-- **Minimal mode**: hides the sidebar, right panel, the entire title bar (menus and window buttons) and bottom panel, leaving only chat + input.
-  - Resize from any edge or corner (invisible handles, minimum 240×120); a thin invisible strip at the top moves the window; content wraps, no horizontal scrollbar.
-  - Under each answer only a small **Copy** button remains (shows ✓ after copying); like/dislike/share/usage/time, the "done in X s" line and thinking/tool blocks are hidden; thin scrollbar shown on hover.
-  - Compact single-line input that grows up to ~5 lines; **no send button**: Enter sends, Shift+Enter inserts a newline, **Esc stops generation**.
-  - No close button. Win+↓ minimizes; Win+↑ does not work (transparent-window limitation) — use the tray menu ("Minimize window" / "Maximize / restore window") or the taskbar icon. Leaving minimal mode restores everything.
-- **Magic mode** (tied to window focus): when Harness loses focus the whole window fades out in ~0.12 s (done in the main process with `win.setOpacity`, no white flash); clicking back or Alt+Tab shows it instantly. Native dialogs/menus don't count as losing focus; a ~1% alpha layer keeps clicks from falling through; the wake-up click is swallowed.
-- Settings persist in `settings.json`.
+- **Window opacity 0–100%** — only backgrounds change (including the input box). At 0% only the text floats over your desktop, and the window still receives clicks and typing. It is linear: 50% really looks half transparent.
+- **Text opacity 0–100%**, independent of window opacity: chat content, the input area and the whole title bar; borders and dividers follow it.
+- **Text colour**: soft presets plus a custom colour (HEX); code blocks keep their syntax colours.
+- **Everything in the chat with its own background** (inline code, code blocks, tables, badges, tooltips, menus…) follows window opacity.
+- **No blue**: the send button etc. become grey; the input box is a very light layer that never turns dark on focus.
+- **Pasted images** show only as a faint `[Image 1]` chip in the input box (the image is still sent as an attachment).
+- **Minimal mode**: only chat + input box.
+  - Resize from any edge or corner (minimum 240×120); a ~10px invisible strip at the top drags the window; content wraps when narrow.
+  - Only a small **Copy** button under each answer; a compact single-line input with **no send button**: `Enter` sends, `Shift+Enter` newline, `Esc` stops generation.
+  - No close button. `Win+↓` minimizes; `Win+↑` does not work on a transparent window — use the tray menu "Maximize / restore window".
+- **Magic mode**: the whole window fades out when it loses focus (it still blocks clicks) and comes back instantly, with no white flash.
 
-## Shortcuts (global, work even when the window is invisible)
+### Shortcuts (global, also work while the window is hidden)
 
 | Shortcut | Action |
 | --- | --- |
-| Ctrl+Alt+T | Open/close the skin menu (in minimal mode it pops up at the bottom-left) |
-| Ctrl+Alt+M | Toggle magic mode |
-| Ctrl+Alt+0 | Reset everything to the original look |
+| `Ctrl+Alt+T` | Open / close the skin settings menu |
+| `Ctrl+Alt+M` | Toggle magic mode |
+| `Ctrl+Alt+0` | Reset everything to the original look |
 
-Tray icon menu: skin settings / magic mode / reset / minimize window / maximize-restore window / quit (double-click = reset).
+Tray icon menu: skin settings / magic mode / reset / minimize window / maximize-restore window / quit. Settings are saved to `settings.json` in the tool folder; defaults are window 100%, text 100%, minimal off.
 
-## How it works
+## Uninstall
 
-1. The launcher starts Harness with `--inspect-brk` + `--remote-debugging-port` (the Electron fuse `EnableNodeCliInspectArguments` is on and asar integrity checking is off, so `app.asar` never needs patching). Before `main.js` runs, `hook.js` is executed over the Node inspector: it makes the main window `transparent: true` with a `#00000000` background (via a restricted getter on `Object.prototype`, because `BrowserWindow` is a native constructor), removes the native `titleBarOverlay` (the page draws its own window buttons), tracks focus for magic mode, and sets the AppUserModelID.
-2. `inject.js` is injected over CDP (`Page.addScriptToEvaluateOnNewDocument`), only into Harness's own pages; settings are sent back via `Runtime.addBinding`.
-3. Window opacity does **not** use `SetLayeredWindowAttributes` or colour keying. Large backgrounds become `rgba(original, alpha × windowOpacity)` written per element (only the bottom layer carries alpha, so it is linear); small chat elements are grouped by colour into a handful of CSSOM rules. Text opacity is the element `opacity` of ~10 targets. No root-level inherited variables drive the look (that forced full-tree restyles and 30 fps sliders).
-4. `helper.ps1` provides global hotkeys and the tray icon; `shortcuts.js` + `shell.ps1` back up/rewrite/restore shortcuts.
-5. The launcher is single-instance (control port 127.0.0.1:9342).
+Double-click `uninstall.bat`: it restores all original shortcuts (the originals are kept in the `backup` folder). Afterwards the original shortcuts start plain DeepSeek Harness. To remove completely, quit Harness and delete the tool folder.
 
-Internal ports / env vars: `DSH_PORT` (9223, page debugging), `DSH_INSPECT` (9341, main-process inspector), `DSH_CONTROL` (9342), `DSH_EXE`, `DSH_APPID`.
+## FAQ
 
-## Known limitations
+**"DeepSeek Harness not found"?**
+`install.bat` checks, in order: the registry uninstall entry → Start menu / desktop shortcuts → common install locations → a file picker asking you to choose `DeepSeek Harness.exe`. The result is stored in `config.json` in the tool folder and every script reads it. To re-detect, delete `config.json` and run `install.bat` again.
 
-- Window buttons are drawn by the page (the native overlay can't be made smaller or hidden); they look and behave the same, but without the Win11 snap-layout flyout.
-- Large backgrounds are detected by area (≥ 9000 px²); after a Harness UI update a new large background may not turn transparent — selectors only use the stable suffix of CSS-module class names.
-- Global hotkeys are polled (not registered), so they never conflict with other apps but can't block them either.
-- Fully saturated solid colours (red/blue badges, primary buttons) are intentionally left unchanged.
+**It stopped working after a Harness update?**
+An auto-update may regenerate the shortcut as the original. Run `install.bat` again. The tool also re-checks and repairs the shortcuts on every start, and if the Harness install location changed, the launcher re-detects it automatically. If a new UI element is not transparent, the update changed Harness's UI structure — please open an issue.
 
-## Files
+**How do I get the original look back?**
+Temporarily: press `Ctrl+Alt+0` or choose "Reset" in the tray menu. Permanently: run `uninstall.bat`.
 
-`launch.vbs` / `repair.vbs` windowless entry & repair · `launcher.js` launcher · `hook.js` main-process hook · `inject.js` injected skin/menu/buttons · `shortcuts.js` + `shell.ps1` shortcut handling · `helper.ps1` hotkeys + tray · `install.bat` / `uninstall.bat` / `start.bat`.
+**The window is invisible?**
+Magic mode may be on (the window hides when unfocused), or opacity is 0. Press `Ctrl+Alt+0`.
+
+**Antivirus warning?**
+The tool uses PowerShell scripts to rewrite shortcuts and the Node debugging connection to inject styles; this is fairly low-level behaviour and some security software may flag it. The full source is in the folder.
+
+## What it does and which ports it opens (security)
+
+The tool injects styles through Electron's debugging interfaces. Exactly what happens:
+
+1. Harness is started with `--inspect-brk` and `--remote-debugging-port`, **both bound to `127.0.0.1` only, on a random free port chosen at every start** — no fixed ports.
+2. `--inspect-brk` (the Node debugger, which can run code in Harness's main process) **is open only for the few hundred milliseconds of injection**. Afterwards the tool opens a control channel inside the Harness main process — a **named pipe with a random name plus a random token** — and immediately closes the inspector.
+3. The page debugging port (`--remote-debugging-port`) **has to stay open** while Harness runs, because styles are injected through it and settings come back through it (127.0.0.1 only, random port). **Risk:** other programs on this PC could in theory connect to it. If that is not acceptable to you, do not use this tool.
+4. The tool's own single-instance control port is also random + 127.0.0.1 only + token-protected. The ports, pipe name and token are stored in `run.json` in the tool folder — do not share that file.
+5. The tool **does not use the network, upload anything, or create startup entries / scheduled tasks** (unless you run `node shortcuts.js install --login-repair` yourself), and **does not modify any Harness file** (including `app.asar`); it only rewrites shortcuts (originals are backed up).
+6. Note: Harness itself also opens a local-only Node inspector (e.g. port 9230); that one belongs to the app, not to this tool.
+
+## How it works (short)
+
+`launcher.js` starts Harness and runs `hook.js` before `main.js` (creating the main window transparent, removing the native window buttons so the page draws its own, tracking focus for magic mode), then injects `inject.js` over CDP. Window opacity does not use `SetLayeredWindowAttributes`; every large background is rewritten to `rgba(original, opacity)` (only the bottom layer carries alpha, so it is linear). `detect.ps1` finds Harness, `shortcuts.js` + `shell.ps1` back up / rewrite / restore shortcuts, `helper.ps1` provides global hotkeys and the tray icon.
+
+## Disclaimer
+
+- This is an **unofficial** third-party tool, not affiliated with or endorsed by DeepSeek.
+- It depends on Harness's current internals (Electron debugging interface, UI CSS class names). **It may stop working after a DeepSeek update**; use `uninstall.bat` or `Ctrl+Alt+0` to get back to the original.
+- The software is provided "as is", without warranty of any kind; use at your own risk (see [LICENSE](LICENSE)).
+
+## License
+
+[MIT](LICENSE)

@@ -1,6 +1,11 @@
+config.json
+run.json
 settings.json
 *.log
 backup/
 screenshots/
 shot_*.png
 HANDOFF.md
+README.old.md
+node.path
+*.tmp
