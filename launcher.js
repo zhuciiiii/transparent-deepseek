@@ -231,6 +231,22 @@ async function attachExisting() {
   return true;
 }
 
+// Harness 每次启动都会往 127.0.0.1 存一个 dsh-auth-* cookie 且从不清理；攒到约 70 个（请求头 > 16KB）后本地服务回 431，
+// 应用报「desktop welcome: Web authentication failed」打不开。启动前（Harness 没在运行、数据库没被锁时）清掉这些过期的 cookie。
+// 只删 127.0.0.1 下名字以 dsh-auth- 开头的行，其它 cookie 不动；失败（比如没有 node:sqlite、库被占用）静默跳过。
+function cleanStaleAuthCookies() {
+  try {
+    const dbPath = path.join(process.env.APPDATA || '', '@deepseek-ai', 'dsh-desktop', 'Network', 'Cookies');
+    if (!fs.existsSync(dbPath)) return;
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(dbPath);
+    try {
+      const n = db.prepare("select count(*) c from cookies where host_key='127.0.0.1' and name like 'dsh-auth-%'").get().c;
+      if (n > 0) { db.exec("delete from cookies where host_key='127.0.0.1' and name like 'dsh-auth-%'"); log('已清理过期的本地登录 cookie：', n, '个'); }
+    } finally { db.close(); }
+  } catch (e) { log('清理本地登录 cookie 跳过：', e.message); }
+}
+
 async function ensureHarness() {
   const run = readRun();
   const pageAlive = !!(run && run.page && await alive(run.page));
@@ -244,6 +260,7 @@ async function ensureHarness() {
     log('检测到以普通方式运行的 Harness（没有调试端口），关掉后用美化版重开 ...');
     if (!(await killHarness())) { showError('无法关闭正在运行的 DeepSeek Harness，请手动完全退出它（托盘图标右键 -> 退出）后再打开。'); process.exit(2); }
   }
+  cleanStaleAuthCookies();
   await launchAndHook();
   for (let i = 0; i < 400; i++) { if (await alive(PORT)) return; await sleep(40); }
   throw new Error('等待页面调试端口超时');

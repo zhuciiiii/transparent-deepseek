@@ -64,6 +64,9 @@ Temporarily: press `Ctrl+Alt+0` or choose "Reset" in the tray menu. Permanently:
 **The window is invisible?**
 Magic mode may be on (the window hides when unfocused), or opacity is 0. Press `Ctrl+Alt+0`.
 
+**Harness won't start: `desktop welcome: Web authentication failed`?**
+Harness stores one `dsh-auth-*` cookie for 127.0.0.1 on every launch and never removes it; after ~70 of them the local server answers 431 (request headers too large) and the app fails to start (the original app too). The launcher now deletes these stale cookies before each launch (only `dsh-auth-*` under `127.0.0.1`, while Harness is closed). If you hit this when starting from the original icon, start once through this tool.
+
 **Antivirus warning?**
 The tool uses PowerShell scripts to rewrite shortcuts and the Node debugging connection to inject styles; this is fairly low-level behaviour and some security software may flag it. The full source is in the folder.
 
